@@ -66,7 +66,7 @@ const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         executablePath: process.env.RENDER
-            ? executablePath()
+            ? '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome'
             : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: [
             '--no-sandbox',
