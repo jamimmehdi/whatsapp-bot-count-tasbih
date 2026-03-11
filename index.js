@@ -46,10 +46,17 @@ let clientReady = false;
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: process.env.RAILWAY_ENVIRONMENT
-            ? undefined
-            : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+            || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+        ],
     }
 });
 
