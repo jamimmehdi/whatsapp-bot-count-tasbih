@@ -4,6 +4,7 @@ const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { executablePath } = require('puppeteer');
 
 const app = express();
 app.use(express.json());
@@ -64,8 +65,9 @@ function getChromeExecutable() {
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: process.env.CHROME_PATH
-            || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath: process.env.RENDER
+            ? executablePath()
+            : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
