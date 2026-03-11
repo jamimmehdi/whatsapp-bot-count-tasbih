@@ -3,7 +3,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
-const { executablePath } = require('puppeteer');
+const { execSync } = require('child_process');
 
 const app = express();
 app.use(express.json());
@@ -44,12 +44,27 @@ function parseCount(text) {
 let qrCodeData = null;
 let clientReady = false;
 
+
+function getChromeExecutable() {
+    if (!process.env.RENDER) {
+        return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    }
+    try {
+        // Find whatever chrome was installed by puppeteer
+        const result = execSync('find /opt/render -name "chrome" -type f 2>/dev/null').toString().trim();
+        const path = result.split('\n')[0];
+        console.log('🔍 Found Chrome at:', path);
+        return path;
+    } catch (e) {
+        console.log('⚠️ Could not find chrome, trying default');
+        return null;
+    }
+}
+
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: process.env.RENDER
-            ? executablePath()
-            : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath: getChromeExecutable(),
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
