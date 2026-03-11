@@ -64,7 +64,8 @@ function getChromeExecutable() {
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: getChromeExecutable(),
+        executablePath: process.env.CHROME_PATH
+            || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',

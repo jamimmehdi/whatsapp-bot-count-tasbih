@@ -2,8 +2,10 @@ services:
   - type: web
     name: tasbih-bot
     env: node
-    buildCommand: npm install && npx puppeteer browsers install chrome
+    buildCommand: apt-get install -y chromium && npm install
     startCommand: node index.js
     envVars:
       - key: PUPPETEER_SKIP_DOWNLOAD
         value: true
+      - key: CHROME_PATH
+        value: /usr/bin/chromium
