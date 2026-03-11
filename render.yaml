@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: tasbih-bot
+    env: node
+    buildCommand: npm install && npx puppeteer browsers install chrome
+    startCommand: node index.js
+    envVars:
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: true

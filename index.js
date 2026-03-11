@@ -3,6 +3,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
+const { executablePath } = require('puppeteer');
 
 const app = express();
 app.use(express.json());
@@ -46,8 +47,9 @@ let clientReady = false;
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
-            || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath: process.env.RENDER
+            ? executablePath()
+            : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
