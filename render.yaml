@@ -4,8 +4,14 @@ services:
     env: node
     buildCommand: apt-get install -y chromium && npm install
     startCommand: node index.js
+    disk:
+      name: tasbih-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: PUPPETEER_SKIP_DOWNLOAD
         value: true
-      - key: CHROME_PATH
+      - key: PUPPETEER_EXECUTABLE_PATH
         value: /usr/bin/chromium
+      - key: DATA_DIR
+        value: /data

@@ -1,22 +1,32 @@
+require('dotenv').config();
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { executablePath } = require('puppeteer');
 
 const app = express();
 app.use(express.json());
 
 // ─── Persistent Storage ───────────────────────────────────────────────────────
-const DATA_FILE = path.join(__dirname, 'data.json');
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) {
-        return { grandTotal: 0, memberTotals: {}, history: [] };
+        return { groups: {} };
     }
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    if (!data.groups) data.groups = {};
+    return data;
+}
+
+function getGroupData(data, groupId, groupName) {
+    if (!data.groups[groupId]) {
+        data.groups[groupId] = { name: groupName, grandTotal: 0, memberTotals: {}, history: [] };
+    }
+    return data.groups[groupId];
 }
 
 function saveData(data) {
@@ -44,26 +54,10 @@ function parseCount(text) {
 // ─── WhatsApp Client ──────────────────────────────────────────────────────────
 let qrCodeData = null;
 let clientReady = false;
-
-
-function getChromeExecutable() {
-    if (!process.env.RENDER) {
-        return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    }
-    try {
-        // Find whatever chrome was installed by puppeteer
-        const result = execSync('find /opt/render -name "chrome" -type f 2>/dev/null').toString().trim();
-        const path = result.split('\n')[0];
-        console.log('🔍 Found Chrome at:', path);
-        return path;
-    } catch (e) {
-        console.log('⚠️ Could not find chrome, trying default');
-        return null;
-    }
-}
+const processedMessages = new Set();
 
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({ dataPath: path.join(DATA_DIR, '.wwebjs_auth') }),
     puppeteer: {
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
             || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -73,8 +67,6 @@ const client = new Client({
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-first-run',
-            '--no-zygote',
-            '--single-process',
         ],
     }
 });
@@ -98,6 +90,13 @@ client.on('disconnected', () => {
 });
 
 client.on('message_create', async (msg) => {
+    // Deduplicate — use sender+timestamp as a stable key since id._serialized
+    // can differ across duplicate firings of the same message
+    const msgKey = `${msg.from}_${msg.author || ''}_${msg.timestamp}`;
+    if (processedMessages.has(msgKey)) return;
+    processedMessages.add(msgKey);
+    if (processedMessages.size > 500) processedMessages.delete(processedMessages.values().next().value);
+
     console.log('📨 message_create:', msg.body, '| fromMe:', msg.fromMe);
 
     // Ignore the bot's own replies
@@ -129,7 +128,8 @@ client.on('message_create', async (msg) => {
 
         // Update data
         const data = loadData();
-        data.grandTotal += count;
+        const groupData = getGroupData(data, chat.id._serialized, chat.name);
+        groupData.grandTotal += count;
 
         let name;
         try {
@@ -139,22 +139,22 @@ client.on('message_create', async (msg) => {
             name = msg.author || 'Unknown';
         }
 
-        data.memberTotals[name] = (data.memberTotals[name] || 0) + count;
-        data.history.push({
+        groupData.memberTotals[name] = (groupData.memberTotals[name] || 0) + count;
+        groupData.history.push({
             name,
             count,
-            total: data.grandTotal,
+            total: groupData.grandTotal,
             time: new Date().toISOString(),
         });
 
-        if (data.history.length > 100) data.history = data.history.slice(-100);
+        if (groupData.history.length > 100) groupData.history = groupData.history.slice(-100);
         saveData(data);
 
-        console.log(`✅ ${name} added ${count}, grand total: ${data.grandTotal}`);
+        console.log(`✅ [${chat.name}] ${name} added ${count}, grand total: ${groupData.grandTotal}`);
 
         const reply =
             `📿 *${name}* added *${count.toLocaleString()}+*\n\n` +
-            `🕌 Grand Total: *${data.grandTotal.toLocaleString()}*\n\n` +
+            `🕌 Grand Total: *${groupData.grandTotal.toLocaleString()}*\n\n` +
             `سُبْحَانَ ٱللَّٰه`;
 
         if (msg.fromMe) {
@@ -174,10 +174,15 @@ client.initialize();
 // ─── Express Routes ───────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
     const data = loadData();
+    const groups = Object.entries(data.groups || {}).map(([id, g]) => ({
+        id,
+        name: g.name,
+        grandTotal: g.grandTotal,
+        members: Object.keys(g.memberTotals).length,
+    }));
     res.json({
         status: clientReady ? 'connected' : 'waiting_for_qr',
-        grandTotal: data.grandTotal,
-        members: Object.keys(data.memberTotals).length,
+        groups,
     });
 });
 
@@ -213,20 +218,53 @@ app.get('/qr', (req, res) => {
   `);
 });
 
+// /stats?group=<groupId>  — omit groupId to get all groups
 app.get('/stats', (req, res) => {
     const data = loadData();
-    const sorted = Object.entries(data.memberTotals).sort((a, b) => b[1] - a[1]);
-    res.json({
-        grandTotal: data.grandTotal,
-        memberCount: sorted.length,
-        leaderboard: sorted.map(([name, total]) => ({ name, total })),
-        recentHistory: data.history.slice(-10).reverse(),
+    const { group } = req.query;
+
+    if (group) {
+        const g = (data.groups || {})[group];
+        if (!g) return res.status(404).json({ error: 'Group not found' });
+        const sorted = Object.entries(g.memberTotals).sort((a, b) => b[1] - a[1]);
+        return res.json({
+            groupId: group,
+            groupName: g.name,
+            grandTotal: g.grandTotal,
+            memberCount: sorted.length,
+            leaderboard: sorted.map(([name, total]) => ({ name, total })),
+            recentHistory: g.history.slice(-10).reverse(),
+        });
+    }
+
+    // All groups summary
+    const summary = Object.entries(data.groups || {}).map(([id, g]) => {
+        const sorted = Object.entries(g.memberTotals).sort((a, b) => b[1] - a[1]);
+        return {
+            groupId: id,
+            groupName: g.name,
+            grandTotal: g.grandTotal,
+            memberCount: sorted.length,
+            leaderboard: sorted.map(([name, total]) => ({ name, total })),
+        };
     });
+    res.json({ groups: summary });
 });
 
+// /reset?group=<groupId>  — omit groupId to reset ALL groups
 app.post('/reset', (req, res) => {
-    saveData({ grandTotal: 0, memberTotals: {}, history: [] });
-    res.json({ success: true, message: 'Counter reset to 0' });
+    const data = loadData();
+    const { group } = req.query;
+
+    if (group) {
+        if (!(data.groups || {})[group]) return res.status(404).json({ error: 'Group not found' });
+        data.groups[group] = { ...data.groups[group], grandTotal: 0, memberTotals: {}, history: [] };
+        saveData(data);
+        return res.json({ success: true, message: `Counter reset for group: ${data.groups[group].name}` });
+    }
+
+    saveData({ groups: {} });
+    res.json({ success: true, message: 'All group counters reset' });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
