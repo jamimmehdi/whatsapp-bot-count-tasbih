@@ -109,9 +109,11 @@ client.on('ready', () => {
     console.log('✅ WhatsApp client ready!');
 });
 
-client.on('disconnected', () => {
+client.on('disconnected', (reason) => {
     clientReady = false;
-    console.log('❌ WhatsApp disconnected');
+    console.log('❌ WhatsApp disconnected:', reason);
+    console.log('🔄 Reinitializing in 10 seconds...');
+    setTimeout(initializeClient, 10000);
 });
 
 client.on('message_create', async (msg) => {
@@ -193,7 +195,17 @@ client.on('message_create', async (msg) => {
     }
 });
 
-client.initialize();
+async function initializeClient() {
+    try {
+        await client.initialize();
+    } catch (err) {
+        console.error('❌ Client initialization failed:', err.message);
+        console.log('🔄 Retrying in 15 seconds...');
+        setTimeout(initializeClient, 15000);
+    }
+}
+
+initializeClient();
 
 // ─── Express Routes ───────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
