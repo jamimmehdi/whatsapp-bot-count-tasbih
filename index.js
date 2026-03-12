@@ -69,6 +69,7 @@ const processedMessages = new Set();
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(DATA_DIR, '.wwebjs_auth') }),
     puppeteer: {
+        headless: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
             || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         args: [
@@ -77,6 +78,16 @@ const client = new Client({
             '--disable-dev-shm-usage',
             '--disable-gpu',
             '--no-first-run',
+            '--disable-extensions',
+            '--disable-default-apps',
+            '--disable-background-networking',
+            '--disable-sync',
+            '--disable-translate',
+            '--hide-scrollbars',
+            '--metrics-recording-only',
+            '--mute-audio',
+            '--no-default-browser-check',
+            '--safebrowsing-disable-auto-update',
         ],
     }
 });
