@@ -271,6 +271,179 @@ app.get('/stats', (req, res) => {
     res.json({ groups: summary });
 });
 
+// ─── Manual Entry UI ──────────────────────────────────────────────────────────
+app.get('/add', (req, res) => {
+    const data = loadData();
+    const groups = Object.entries(data.groups || {}).map(([id, g]) => ({
+        id,
+        name: g.name,
+        members: Object.keys(g.memberTotals),
+    }));
+
+    res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Tasbih Bot — Manual Entry</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #0d0f0e; color: #e8ede9; min-height: 100vh;
+           display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .card { background: #161a17; border: 1px solid #2a332c; border-radius: 16px;
+            padding: 32px; width: 100%; max-width: 420px; }
+    h2 { font-size: 1.3rem; margin-bottom: 6px; }
+    .subtitle { color: #6b7a6e; font-size: 0.9rem; margin-bottom: 28px; }
+    label { display: block; font-size: 0.85rem; color: #9db09f; margin-bottom: 6px; }
+    select, input { width: 100%; padding: 10px 14px; border-radius: 8px;
+                    border: 1px solid #2a332c; background: #1e2620; color: #e8ede9;
+                    font-size: 1rem; margin-bottom: 20px; outline: none; }
+    select:focus, input:focus { border-color: #7ec88a; }
+    button { width: 100%; padding: 12px; background: #7ec88a; color: #0d0f0e;
+             font-size: 1rem; font-weight: 600; border: none; border-radius: 8px;
+             cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #6ab876; }
+    button:disabled { background: #3a4a3c; color: #6b7a6e; cursor: not-allowed; }
+    .new-member { font-size: 0.8rem; color: #6b7a6e; margin-top: -14px; margin-bottom: 20px; }
+    .new-member a { color: #7ec88a; cursor: pointer; text-decoration: none; }
+    #newMemberInput { display: none; }
+    .toast { display: none; margin-top: 20px; padding: 12px 16px; border-radius: 8px;
+             font-size: 0.9rem; text-align: center; }
+    .toast.success { background: #1e3a22; color: #7ec88a; border: 1px solid #2d5232; }
+    .toast.error   { background: #3a1e1e; color: #e87e7e; border: 1px solid #522d2d; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>📿 Manual Entry</h2>
+    <p class="subtitle">Add a count on behalf of a group member</p>
+
+    <label for="groupSelect">Group</label>
+    <select id="groupSelect">
+      <option value="">— Select a group —</option>
+      ${groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('')}
+    </select>
+
+    <label for="memberSelect">Member</label>
+    <select id="memberSelect" disabled>
+      <option value="">— Select a member —</option>
+    </select>
+    <p class="new-member">Not in the list? <a onclick="toggleNewMember()">Add new member</a></p>
+
+    <div id="newMemberInput">
+      <label for="newMemberName">New Member Name</label>
+      <input type="text" id="newMemberName" placeholder="Enter name" />
+    </div>
+
+    <label for="countInput">Count to Add</label>
+    <input type="number" id="countInput" placeholder="e.g. 100" min="1" />
+
+    <button id="submitBtn" disabled onclick="submitEntry()">Add Count</button>
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script>
+    const groups = ${JSON.stringify(groups)};
+
+    document.getElementById('groupSelect').addEventListener('change', function () {
+      const groupId = this.value;
+      const memberSelect = document.getElementById('memberSelect');
+      memberSelect.innerHTML = '<option value="">— Select a member —</option>';
+      memberSelect.disabled = !groupId;
+      document.getElementById('submitBtn').disabled = true;
+
+      if (groupId) {
+        const group = groups.find(g => g.id === groupId);
+        if (group && group.members.length > 0) {
+          group.members.sort().forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m; opt.textContent = m;
+            memberSelect.appendChild(opt);
+          });
+        }
+      }
+    });
+
+    document.getElementById('memberSelect').addEventListener('change', updateSubmitBtn);
+    document.getElementById('countInput').addEventListener('input', updateSubmitBtn);
+    document.getElementById('newMemberName').addEventListener('input', updateSubmitBtn);
+
+    function updateSubmitBtn() {
+      const group = document.getElementById('groupSelect').value;
+      const member = document.getElementById('memberSelect').value;
+      const newMember = document.getElementById('newMemberName').value.trim();
+      const count = document.getElementById('countInput').value;
+      const isNewMemberMode = document.getElementById('newMemberInput').style.display === 'block';
+      document.getElementById('submitBtn').disabled =
+        !group || (!member && !newMember) || !count || count < 1;
+    }
+
+    function toggleNewMember() {
+      const el = document.getElementById('newMemberInput');
+      el.style.display = el.style.display === 'block' ? 'none' : 'block';
+      document.getElementById('memberSelect').value = '';
+      updateSubmitBtn();
+    }
+
+    async function submitEntry() {
+      const groupId = document.getElementById('groupSelect').value;
+      const member = document.getElementById('memberSelect').value;
+      const newMember = document.getElementById('newMemberName').value.trim();
+      const count = parseInt(document.getElementById('countInput').value);
+      const name = newMember || member;
+
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+
+      try {
+        const res = await fetch('/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId, name, count }),
+        });
+        const json = await res.json();
+        showToast(res.ok ? 'success' : 'error',
+          res.ok ? '✅ ' + json.message : '❌ ' + json.error);
+        if (res.ok) document.getElementById('countInput').value = '';
+      } catch (e) {
+        showToast('error', '❌ Request failed');
+      }
+      btn.disabled = false;
+      btn.textContent = 'Add Count';
+    }
+
+    function showToast(type, msg) {
+      const t = document.getElementById('toast');
+      t.className = 'toast ' + type;
+      t.textContent = msg;
+      t.style.display = 'block';
+      setTimeout(() => t.style.display = 'none', 4000);
+    }
+  </script>
+</body>
+</html>`);
+});
+
+app.post('/add', (req, res) => {
+    const { groupId, name, count } = req.body;
+
+    if (!groupId || !name || !count || count <= 0)
+        return res.status(400).json({ error: 'groupId, name, and a positive count are required' });
+
+    const data = loadData();
+    const group = (data.groups || {})[groupId];
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    group.grandTotal += count;
+    group.memberTotals[name] = (group.memberTotals[name] || 0) + count;
+    group.history.push({ name, count, total: group.grandTotal, time: new Date().toISOString() });
+    if (group.history.length > 100) group.history = group.history.slice(-100);
+    saveData(data);
+
+    console.log(`✅ [Manual] [${group.name}] ${name} added ${count}, grand total: ${group.grandTotal}`);
+    res.json({ success: true, message: `${name} +${count.toLocaleString()} → Grand Total: ${group.grandTotal.toLocaleString()}` });
+});
+
 // /reset?group=<groupId>  — omit groupId to reset ALL groups
 app.post('/reset', (req, res) => {
     const data = loadData();
