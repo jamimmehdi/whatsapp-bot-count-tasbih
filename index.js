@@ -13,13 +13,19 @@ app.use(express.json());
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 
+// ─── In-memory cache — load once, write async ─────────────────────────────────
+let cachedData = null;
+
 function loadData() {
+    if (cachedData) return cachedData;
     if (!fs.existsSync(DATA_FILE)) {
-        return { groups: {} };
+        cachedData = { groups: {} };
+        return cachedData;
     }
     const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     if (!data.groups) data.groups = {};
-    return data;
+    cachedData = data;
+    return cachedData;
 }
 
 function getGroupData(data, groupId, groupName) {
@@ -30,7 +36,11 @@ function getGroupData(data, groupId, groupName) {
 }
 
 function saveData(data) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    cachedData = data;
+    // Write to disk asynchronously — doesn't block the reply
+    fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), (err) => {
+        if (err) console.error('❌ Failed to save data:', err.message);
+    });
 }
 
 // ─── Parse Count ──────────────────────────────────────────────────────────────
@@ -126,18 +136,17 @@ client.on('message_create', async (msg) => {
             return;
         }
 
-        // Update data
+        // Fetch contact name and update data in parallel
         const data = loadData();
         const groupData = getGroupData(data, chat.id._serialized, chat.name);
         groupData.grandTotal += count;
 
-        let name;
-        try {
-            const contact = await msg.getContact();
-            name = contact.pushname || contact.number || msg.author || 'Unknown';
-        } catch (e) {
-            name = msg.author || 'Unknown';
-        }
+        // Resolve contact name and send reply at the same time
+        const [name] = await Promise.all([
+            msg.getContact()
+                .then(c => c.pushname || c.number || msg.author || 'Unknown')
+                .catch(() => msg.author || 'Unknown'),
+        ]);
 
         groupData.memberTotals[name] = (groupData.memberTotals[name] || 0) + count;
         groupData.history.push({
@@ -148,7 +157,7 @@ client.on('message_create', async (msg) => {
         });
 
         if (groupData.history.length > 100) groupData.history = groupData.history.slice(-100);
-        saveData(data);
+        saveData(data); // async — doesn't block
 
         console.log(`✅ [${chat.name}] ${name} added ${count}, grand total: ${groupData.grandTotal}`);
 
