@@ -178,8 +178,14 @@ client.on('message_create', async (msg) => {
 
         console.log(`✅ [${chat.name}] ${name} added ${count}, grand total: ${groupData.grandTotal}`);
 
+        const memberTotals = Object.entries(groupData.memberTotals)
+            .sort((a, b) => b[1] - a[1])
+            .map(([n, t]) => `${n === name ? '👤' : '▪️'} *${n}*: ${t.toLocaleString()}`)
+            .join('\n');
+
         const reply =
             `📿 *${name}* added *${count.toLocaleString()}+*\n\n` +
+            `👥 *Member Totals:*\n${memberTotals}\n\n` +
             `🕌 Grand Total: *${groupData.grandTotal.toLocaleString()}*\n\n` +
             `سُبْحَانَ ٱللَّٰه`;
 
