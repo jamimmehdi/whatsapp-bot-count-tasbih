@@ -68,6 +68,10 @@ const processedMessages = new Set();
 
 const client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(DATA_DIR, '.wwebjs_auth') }),
+    webVersionCache: {
+        type: 'local',
+        path: path.join(DATA_DIR, '.wwebjs_cache'),
+    },
     puppeteer: {
         headless: true,
         executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
